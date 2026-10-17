@@ -27,15 +27,30 @@ function isAndroid() { return /Android/i.test(navigator.userAgent); }
 // iOS PWA (standalone) modunda mı?
 function isIOSPWA() {
   if (!isIOS()) return false;
-  return window.matchMedia('(display-mode: standalone)').matches
-      || window.navigator.standalone === true;
+  // navigator.standalone Safari'de de true döner — KULLANMIYORUZ
+  // Sadece CSS media query güvenilir: standalone = ana ekrandan açıldı
+  return window.matchMedia('(display-mode: standalone)').matches;
 }
 
-// Safari'de aç (PWA'dan çıkıp Safari'ye)
+// iOS PWA'dan Safari'ye geçiş: window.open() PWA içinde açılır (çalışmaz)
+// navigator.share() ile paylaşım menüsü aç → kullanıcı Safari'yi seçer
 function openInSafari() {
   const url = window.location.href;
-  // iOS'ta _blank Safari'yi açar
-  window.open(url, '_blank', 'noopener');
+  if (navigator.share) {
+    navigator.share({
+      title: '112 Çevirmen',
+      text: 'Sesli çeviri için Safari\'de açın:',
+      url: url
+    }).catch(() => {});
+  } else if (navigator.clipboard) {
+    navigator.clipboard.writeText(url).then(() => {
+      alert('Adres kopyalandı! Safari\'yi açıp adres çubuğuna yapıştırın:\n\n' + url);
+    }).catch(() => {
+      alert('Safari\'yi açıp şu adrese girin:\n\n' + url);
+    });
+  } else {
+    alert('Safari\'yi açıp şu adrese girin:\n\n' + url);
+  }
 }
 
 // ============================================================
@@ -151,13 +166,19 @@ function _initRecognition(lang, SpeechRec) {
     translatorState.recognition = null;
     trUpdateButtons(null);
     if (event.error === 'aborted') { trShowStatus('', ''); return; }
+
+    // service-not-allowed = iOS Safari'de mikrofon izni verilmedi
+    // veya HTTPS olmayan ortam
+    if (event.error === 'service-not-allowed' || event.error === 'not-allowed' || event.error === 'permission-denied') {
+      trShowStatus('', '');
+      trShowServiceNotAllowed(lang);
+      return;
+    }
+
     const msgs = {
-      'no-speech':        'Ses algılanamadı, tekrar deneyin.',
-      'not-allowed':      '⚠️ Mikrofon izni verilmedi. Tarayıcı ayarlarından izin verin.',
-      'permission-denied':'⚠️ Mikrofon izni verilmedi. Tarayıcı ayarlarından izin verin.',
-      'network':          '📡 Ses tanıma için internet bağlantısı gerekli.',
-      'audio-capture':    '🎤 Mikrofona erişilemiyor. Başka uygulama kullanıyor olabilir.',
-      'service-not-allowed': '⚠️ Ses tanıma servisi kullanılamıyor.'
+      'no-speech':     'Ses algılanamadı, tekrar deneyin.',
+      'network':       '📡 Ses tanıma için internet bağlantısı gerekli.',
+      'audio-capture': '🎤 Mikrofona erişilemiyor. Başka uygulama kullanıyor olabilir.',
     };
     trShowStatus(msgs[event.error] || `Hata: ${event.error}`, 'error');
     setTimeout(() => trShowStatus('', ''), 4000);
@@ -170,6 +191,53 @@ function _initRecognition(lang, SpeechRec) {
     translatorState.recognition = null;
     trUpdateButtons(null);
     setTimeout(() => trShowStatus('', ''), 4000);
+  }
+}
+
+// service-not-allowed / not-allowed hatası gelince göster
+// iOS Safari: mikrofon izni kapalı veya HTTPS sorunu
+function trShowServiceNotAllowed(lang) {
+  // Eski kutu varsa kaldır
+  const old = document.getElementById('tr-mic-error');
+  if (old) old.remove();
+
+  const isTr = lang === 'tr-TR';
+  const box  = document.createElement('div');
+  box.id = 'tr-mic-error';
+  box.style.cssText = `
+    background:#fef2f2; border:2px solid #fecaca; border-radius:14px;
+    padding:16px; margin-bottom:14px; animation:trSlideIn 0.3s ease;
+  `;
+  box.innerHTML = `
+    <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:12px;">
+      <span style="font-size:24px;flex-shrink:0;">🎤</span>
+      <div>
+        <div style="font-size:14px;font-weight:700;color:#dc2626;margin-bottom:4px;">
+          Mikrofon İzni Gerekli
+        </div>
+        <div style="font-size:12px;color:#b91c1c;line-height:1.6;">
+          iOS Safari'de mikrofon iznini açmak için:<br>
+          <b>Ayarlar → Safari → Mikrofon → İzin Ver</b><br>
+          Sonra sayfayı yenileyip tekrar deneyin.
+        </div>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;">
+      <button onclick="document.getElementById('tr-mic-error').remove()"
+        style="flex:1;padding:10px;background:#fee2e2;color:#b91c1c;border:1px solid #fecaca;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;touch-action:manipulation;">
+        Kapat
+      </button>
+      <button onclick="document.getElementById('tr-mic-error').remove(); document.getElementById('tr-text-input')?.focus();"
+        style="flex:2;padding:10px;background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:white;border:none;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;touch-action:manipulation;">
+        ⌨️ Klavye ile Devam Et
+      </button>
+    </div>
+  `;
+
+  // Durum çubuğunun üstüne ekle
+  const statusEl = document.getElementById('tr-status');
+  if (statusEl && statusEl.parentNode) {
+    statusEl.parentNode.insertBefore(box, statusEl);
   }
 }
 
@@ -581,15 +649,14 @@ function renderTranslatorUI() {
 
   // iOS PWA uyarı + Safari'de Aç butonu
   const safariOpenBtn = iosPwa ? `
-    <div style="background:linear-gradient(135deg,#0ea5e9,#0284c7);border-radius:14px;padding:14px;margin-bottom:14px;display:flex;align-items:center;gap:12px;">
-      <span style="font-size:28px;flex-shrink:0;">🧭</span>
-      <div style="flex:1;color:white;">
-        <div style="font-size:14px;font-weight:700;margin-bottom:2px;">Sesli komut için Safari'de açın</div>
-        <div style="font-size:11px;opacity:0.85;">Ses tanıma sadece Safari tarayıcısında çalışır</div>
+    <div style="background:linear-gradient(135deg,#0ea5e9,#0284c7);border-radius:14px;padding:14px;margin-bottom:14px;">
+      <div style="color:white;margin-bottom:10px;">
+        <div style="font-size:14px;font-weight:700;margin-bottom:2px;">📱 Sesli komut için Safari'yi açın</div>
+        <div style="font-size:11px;opacity:0.85;">Apple, PWA modunda ses tanımayı kapatır. Paylaş butonuna basıp Safari'yi seçin.</div>
       </div>
       <button onclick="openInSafari()"
-        style="background:white;color:#0284c7;border:none;padding:10px 18px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;flex-shrink:0;touch-action:manipulation;">
-        Aç ➜
+        style="width:100%;padding:10px;background:white;color:#0284c7;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation;">
+        📤 Paylaş / Safari'de Aç
       </button>
     </div>` : '';
 

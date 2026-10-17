@@ -217,9 +217,9 @@ function processVoiceCommand(command) {
 function toggleVoiceCommand() {
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-  // iOS PWA kontrolü
+  // iOS PWA kontrolü — navigator.standalone Safari'de de true döner, güvenilir değil
   const iosPwa = (/iPhone|iPad|iPod/i.test(navigator.userAgent))
-    && (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true);
+    && window.matchMedia('(display-mode: standalone)').matches;
 
   if (iosPwa) {
     showVoiceIndicator('🍎 PWA modunda ses tanıma çalışmıyor. Safari\'de açın.', true);
