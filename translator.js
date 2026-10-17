@@ -32,24 +32,129 @@ function isIOSPWA() {
   return window.matchMedia('(display-mode: standalone)').matches;
 }
 
-// iOS PWA'dan Safari'ye geçiş: window.open() PWA içinde açılır (çalışmaz)
-// navigator.share() ile paylaşım menüsü aç → kullanıcı Safari'yi seçer
+// iOS PWA'dan Safari'ye geçiş
+// window.open() ve navigator.share() PWA içinde Safari açmıyor — Apple kısıtlaması
+// En güvenilir yol: URL'i panoya kopyala + kullanıcıya talimat ver
 function openInSafari() {
   const url = window.location.href;
-  if (navigator.share) {
-    navigator.share({
-      title: '112 Çevirmen',
-      text: 'Sesli çeviri için Safari\'de açın:',
-      url: url
-    }).catch(() => {});
-  } else if (navigator.clipboard) {
+
+  // Eski kutuyu kaldır
+  const old = document.getElementById('tr-safari-guide');
+  if (old) { old.remove(); return; }
+
+  // Kopyalamayı dene
+  const doCopy = () => {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(url);
+    }
+    // Fallback: eski yöntem
+    const ta = document.createElement('textarea');
+    ta.value = url;
+    ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, 99999);
+    try { document.execCommand('copy'); } catch(e) {}
+    document.body.removeChild(ta);
+    return Promise.resolve();
+  };
+
+  doCopy().then(() => {
+    showSafariGuide(url, true);  // kopyalandı
+  }).catch(() => {
+    showSafariGuide(url, false); // kopyalanamadı, manuel göster
+  });
+}
+
+function showSafariGuide(url, copied) {
+  const box = document.createElement('div');
+  box.id = 'tr-safari-guide';
+  box.style.cssText = `
+    position:fixed; bottom:0; left:0; right:0; z-index:99999;
+    background:#0f172a; border-top:3px solid #3b82f6;
+    padding:20px 16px 32px 16px;
+    border-radius:20px 20px 0 0;
+    animation:trSlideIn 0.3s ease;
+    box-shadow:0 -8px 32px rgba(0,0,0,0.5);
+  `;
+  box.innerHTML = `
+    <div style="text-align:center;margin-bottom:16px;">
+      <div style="font-size:32px;margin-bottom:8px;">🧭</div>
+      <div style="color:white;font-size:16px;font-weight:800;margin-bottom:4px;">Safari'de Nasıl Açılır?</div>
+      <div style="color:#94a3b8;font-size:12px;">Sesli çeviri için Safari gerekli</div>
+    </div>
+
+    <!-- Adım 1 -->
+    <div style="display:flex;align-items:center;gap:12px;background:rgba(255,255,255,0.06);border-radius:12px;padding:12px;margin-bottom:8px;">
+      <div style="background:#3b82f6;color:white;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex-shrink:0;">1</div>
+      <div style="color:#e2e8f0;font-size:13px;line-height:1.5;">
+        ${copied
+          ? '<b style="color:#4ade80;">✅ Adres kopyalandı!</b> Aşağıdaki butona basın'
+          : 'Aşağıdaki adresi kopyalayın'}
+      </div>
+    </div>
+
+    <!-- URL kutusu -->
+    <div style="background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.15);border-radius:10px;padding:10px 12px;margin-bottom:8px;display:flex;align-items:center;gap:8px;">
+      <div style="color:#93c5fd;font-size:11px;flex:1;word-break:break-all;font-family:monospace;">${url}</div>
+      <button onclick="trCopyUrl('${url}')" id="tr-copy-btn"
+        style="background:#3b82f6;color:white;border:none;padding:6px 12px;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;flex-shrink:0;touch-action:manipulation;">
+        ${copied ? '✅' : '📋 Kopyala'}
+      </button>
+    </div>
+
+    <!-- Adım 2 -->
+    <div style="display:flex;align-items:center;gap:12px;background:rgba(255,255,255,0.06);border-radius:12px;padding:12px;margin-bottom:16px;">
+      <div style="background:#3b82f6;color:white;width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex-shrink:0;">2</div>
+      <div style="color:#e2e8f0;font-size:13px;line-height:1.5;">
+        iPhone'da <b style="color:white;">Safari</b>'yi açın →
+        adres çubuğuna uzun basın →
+        <b style="color:white;">"Yapıştır ve Git"</b>
+      </div>
+    </div>
+
+    <!-- Kapat -->
+    <button onclick="document.getElementById('tr-safari-guide').remove()"
+      style="width:100%;padding:13px;background:rgba(255,255,255,0.1);color:white;border:1px solid rgba(255,255,255,0.2);border-radius:12px;font-size:14px;font-weight:600;cursor:pointer;touch-action:manipulation;">
+      Kapat
+    </button>
+  `;
+
+  document.body.appendChild(box);
+
+  // Dışarıya tıklayınca kapat
+  setTimeout(() => {
+    document.addEventListener('click', function closeGuide(e) {
+      if (!box.contains(e.target) && e.target.id !== 'tr-safari-open-btn') {
+        box.remove();
+        document.removeEventListener('click', closeGuide);
+      }
+    });
+  }, 300);
+}
+
+function trCopyUrl(url) {
+  const btn = document.getElementById('tr-copy-btn');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(url).then(() => {
-      alert('Adres kopyalandı! Safari\'yi açıp adres çubuğuna yapıştırın:\n\n' + url);
+      if (btn) { btn.textContent = '✅'; btn.style.background = '#16a34a'; }
     }).catch(() => {
-      alert('Safari\'yi açıp şu adrese girin:\n\n' + url);
+      if (btn) btn.textContent = '❌';
     });
   } else {
-    alert('Safari\'yi açıp şu adrese girin:\n\n' + url);
+    const ta = document.createElement('textarea');
+    ta.value = url;
+    ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+    document.body.appendChild(ta);
+    ta.select();
+    ta.setSelectionRange(0, 99999);
+    try {
+      document.execCommand('copy');
+      if (btn) { btn.textContent = '✅'; btn.style.background = '#16a34a'; }
+    } catch(e) {
+      if (btn) btn.textContent = '❌';
+    }
+    document.body.removeChild(ta);
   }
 }
 
@@ -656,7 +761,7 @@ function renderTranslatorUI() {
       </div>
       <button onclick="openInSafari()"
         style="width:100%;padding:10px;background:white;color:#0284c7;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;touch-action:manipulation;">
-        📤 Paylaş / Safari'de Aç
+        🧭 Safari'de Nasıl Açılır?
       </button>
     </div>` : '';
 
