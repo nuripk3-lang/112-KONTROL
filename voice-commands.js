@@ -217,6 +217,16 @@ function processVoiceCommand(command) {
 function toggleVoiceCommand() {
   const SpeechRec = window.SpeechRecognition || window.webkitSpeechRecognition;
 
+  // iOS PWA kontrolü
+  const iosPwa = (/iPhone|iPad|iPod/i.test(navigator.userAgent))
+    && (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true);
+
+  if (iosPwa) {
+    showVoiceIndicator('🍎 PWA modunda ses tanıma çalışmıyor. Safari\'de açın.', true);
+    setTimeout(hideVoiceIndicator, 4000);
+    return;
+  }
+
   if (!SpeechRec) {
     alert('Tarayıcınız sesli komutu desteklemiyor. Chrome veya Edge kullanın.');
     return;

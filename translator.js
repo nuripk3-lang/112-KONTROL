@@ -24,6 +24,20 @@ function trEscapeHtml(str) {
 function isIOS()     { return /iPhone|iPad|iPod/i.test(navigator.userAgent); }
 function isAndroid() { return /Android/i.test(navigator.userAgent); }
 
+// iOS PWA (standalone) modunda mı?
+function isIOSPWA() {
+  if (!isIOS()) return false;
+  return window.matchMedia('(display-mode: standalone)').matches
+      || window.navigator.standalone === true;
+}
+
+// Safari'de aç (PWA'dan çıkıp Safari'ye)
+function openInSafari() {
+  const url = window.location.href;
+  // iOS'ta _blank Safari'yi açar
+  window.open(url, '_blank', 'noopener');
+}
+
 // ============================================================
 // MyMemory API — Çeviri (AbortController: eski Android uyumlu)
 // ============================================================
@@ -537,12 +551,22 @@ function trUpdateButtons(activeLang) {
 // UI Render
 // ============================================================
 function renderTranslatorUI() {
-  const iosWarn = isIOS() ? `
+  // Ses tanıma desteği kontrolü
+  const hasSpeech = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+  const iosPwa    = isIOSPWA();
+  // iOS PWA'da SpeechRecognition var ama çalışmıyor
+  const speechWorks = hasSpeech && !iosPwa;
+
+  const iosWarn = (isIOS() || iosPwa) ? `
     <div style="background:#fffbeb;border:2px solid #fde68a;border-radius:12px;padding:12px 14px;margin-bottom:14px;display:flex;align-items:flex-start;gap:10px;">
       <span style="font-size:20px;flex-shrink:0;">🍎</span>
       <div style="font-size:12px;color:#92400e;line-height:1.6;">
-        <b style="display:block;margin-bottom:2px;">iOS Notu:</b>
-        Apple cihazlarda sesli okuma için çevirinin altındaki <b>"Sesli Oku 🔊"</b> butonuna dokunun.
+        <b style="display:block;margin-bottom:2px;">${iosPwa ? 'iOS PWA Notu:' : 'iOS Notu:'}</b>
+        ${iosPwa
+          ? 'Ana ekrandan açıldığında Apple ses tanımayı kapatır. Sesli komut için <b>Safari\'de Aç</b> butonuna basın veya <b>klavye ile yazın</b>. Sesli okuma çalışır.'
+          : hasSpeech
+            ? 'Apple cihazlarda sesli komut PWA modunda çalışmayabilir. Sorun olursa <b>klavye ile yaz</b> alanını kullanın.'
+            : 'Apple cihazlarda ses tanıma desteklenmez. <b>klavye ile yaz</b> alanını kullanın.'}
       </div>
     </div>` : '';
 
@@ -551,9 +575,54 @@ function renderTranslatorUI() {
       <span style="font-size:22px;">📡</span>
       <div>
         <div style="font-weight:700;color:#dc2626;font-size:14px;">İnternet bağlantısı yok</div>
-        <div style="color:#b91c1c;font-size:12px;margin-top:2px;">Ses tanıma ve çeviri için internet gereklidir.</div>
+        <div style="color:#b91c1c;font-size:12px;margin-top:2px;">Çeviri için internet bağlantısı gereklidir.</div>
       </div>
     </div>` : '';
+
+  // iOS PWA uyarı + Safari'de Aç butonu
+  const safariOpenBtn = iosPwa ? `
+    <div style="background:linear-gradient(135deg,#0ea5e9,#0284c7);border-radius:14px;padding:14px;margin-bottom:14px;display:flex;align-items:center;gap:12px;">
+      <span style="font-size:28px;flex-shrink:0;">🧭</span>
+      <div style="flex:1;color:white;">
+        <div style="font-size:14px;font-weight:700;margin-bottom:2px;">Sesli komut için Safari'de açın</div>
+        <div style="font-size:11px;opacity:0.85;">Ses tanıma sadece Safari tarayıcısında çalışır</div>
+      </div>
+      <button onclick="openInSafari()"
+        style="background:white;color:#0284c7;border:none;padding:10px 18px;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;flex-shrink:0;touch-action:manipulation;">
+        Aç ➜
+      </button>
+    </div>` : '';
+
+  // Ses butonları — speechWorks false ise gizle veya kilitli göster
+  const voiceButtons = speechWorks ? `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;">
+      <button id="tr-btn-tr" onclick="startListening('tr-TR')"
+        style="background:linear-gradient(135deg,#dc2626,#b91c1c);color:white;border:none;border-radius:18px;padding:20px 8px;cursor:pointer;transition:all 0.2s ease;box-shadow:0 6px 18px rgba(220,38,38,0.3);-webkit-tap-highlight-color:transparent;touch-action:manipulation;">
+        <div style="font-size:32px;margin-bottom:8px;">🇹🇷</div>
+        <div style="font-size:14px;font-weight:700;margin-bottom:4px;">Türkçe Konuş</div>
+        <div style="font-size:11px;opacity:0.85;">→ İngilizceye çevir</div>
+        <div style="margin-top:8px;font-size:20px;">🎤</div>
+      </button>
+      <button id="tr-btn-en" onclick="startListening('en-US')"
+        style="background:linear-gradient(135deg,#1d4ed8,#1e40af);color:white;border:none;border-radius:18px;padding:20px 8px;cursor:pointer;transition:all 0.2s ease;box-shadow:0 6px 18px rgba(29,78,216,0.3);-webkit-tap-highlight-color:transparent;touch-action:manipulation;">
+        <div style="font-size:32px;margin-bottom:8px;">🇬🇧</div>
+        <div style="font-size:14px;font-weight:700;margin-bottom:4px;">Speak English</div>
+        <div style="font-size:11px;opacity:0.85;">→ Türkçeye çevir</div>
+        <div style="margin-top:8px;font-size:20px;">🎤</div>
+      </button>
+    </div>` : (iosPwa ? `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px;opacity:0.5;">
+      <div style="background:#f1f5f9;border:2px dashed #cbd5e1;border-radius:18px;padding:20px 8px;text-align:center;">
+        <div style="font-size:32px;margin-bottom:8px;">🇹🇷</div>
+        <div style="font-size:13px;font-weight:700;color:#64748b;margin-bottom:4px;">Türkçe Konuş</div>
+        <div style="font-size:11px;color:#94a3b8;">🔒 Safari gerekli</div>
+      </div>
+      <div style="background:#f1f5f9;border:2px dashed #cbd5e1;border-radius:18px;padding:20px 8px;text-align:center;">
+        <div style="font-size:32px;margin-bottom:8px;">🇬🇧</div>
+        <div style="font-size:13px;font-weight:700;color:#64748b;margin-bottom:4px;">Speak English</div>
+        <div style="font-size:11px;color:#94a3b8;">🔒 Safari gerekli</div>
+      </div>
+    </div>` : '');
 
   return `
     <!-- Header -->
@@ -573,33 +642,59 @@ function renderTranslatorUI() {
 
     ${offlineWarn}
     ${iosWarn}
+    ${safariOpenBtn}
 
     <!-- Talimat -->
     <div style="background:var(--card-bg);border:1px solid rgba(59,130,246,0.2);border-radius:12px;padding:12px 14px;margin-bottom:14px;display:flex;align-items:flex-start;gap:10px;">
       <span style="font-size:18px;flex-shrink:0;">💡</span>
       <div style="font-size:13px;color:var(--muted);line-height:1.6;">
         <b style="color:var(--text);">Nasıl kullanılır?</b>
-        Butona bas → konuş → algılanan metni düzelt → <b>Çevir</b> butonuna bas.
-        Çeviri sonrası balondaki ✏️ ile her zaman düzeltebilirsin.
+        ${speechWorks
+          ? '🎤 Butona bas → konuş → düzelt → Çevir. Veya aşağıdan <b>klavye ile yaz</b>.'
+          : iosPwa
+            ? 'Sesli için <b>Safari\'de Aç</b> butonuna basın. Buradan <b>klavye ile yazıp</b> çevirebilirsiniz.'
+            : 'Aşağıdan <b>klavye ile yazın</b> ve Çevir butonuna basın.'}
       </div>
     </div>
 
-    <!-- Ana Butonlar -->
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;">
-      <button id="tr-btn-tr" onclick="startListening('tr-TR')"
-        style="background:linear-gradient(135deg,#dc2626,#b91c1c);color:white;border:none;border-radius:18px;padding:20px 8px;cursor:pointer;transition:all 0.2s ease;box-shadow:0 6px 18px rgba(220,38,38,0.3);-webkit-tap-highlight-color:transparent;touch-action:manipulation;">
-        <div style="font-size:32px;margin-bottom:8px;">🇹🇷</div>
-        <div style="font-size:14px;font-weight:700;margin-bottom:4px;">Türkçe Konuş</div>
-        <div style="font-size:11px;opacity:0.85;">→ İngilizceye çevir</div>
-        <div style="margin-top:8px;font-size:20px;">🎤</div>
+    ${voiceButtons}
+
+    <!-- KLAVYE İLE METİN GİRİŞ ALANI -->
+    <div style="background:var(--card-bg);border:2px solid ${speechWorks ? 'rgba(59,130,246,0.25)' : '#3b82f6'};border-radius:16px;padding:14px;margin-bottom:14px;${!speechWorks ? 'box-shadow:0 4px 20px rgba(59,130,246,0.15);' : ''}">
+
+      <div style="font-size:12px;font-weight:700;color:var(--muted);margin-bottom:10px;display:flex;align-items:center;gap:6px;">
+        ⌨️ <span>Klavye ile Yaz</span>
+        ${!speechWorks ? '<span style="background:#3b82f6;color:white;font-size:9px;padding:2px 8px;border-radius:10px;font-weight:700;margin-left:auto;">ÖNERİLEN</span>' : ''}
+      </div>
+
+      <!-- Dil seçici -->
+      <div style="display:flex;gap:6px;margin-bottom:10px;">
+        <button id="tr-mode-tr" onclick="trSetInputMode('tr')"
+          style="flex:1;padding:9px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;border:2px solid #dc2626;background:#fee2e2;color:#b91c1c;touch-action:manipulation;">
+          🇹🇷 Türkçe → 🇬🇧 EN
+        </button>
+        <button id="tr-mode-en" onclick="trSetInputMode('en')"
+          style="flex:1;padding:9px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;border:2px solid #e2e8f0;background:var(--input-bg);color:var(--muted);touch-action:manipulation;">
+          🇬🇧 English → 🇹🇷 TR
+        </button>
+      </div>
+
+      <!-- Metin kutusu -->
+      <textarea id="tr-text-input"
+        style="width:100%;box-sizing:border-box;padding:10px 12px;border-radius:10px;border:1px solid #e2e8f0;font-size:15px;line-height:1.5;resize:vertical;min-height:56px;background:var(--input-bg);color:var(--text);font-family:inherit;outline:none;"
+        placeholder="Çevirmek istediğiniz metni yazın…"
+        autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"
+        onkeydown="if(event.key==='Enter'&&(event.ctrlKey||event.metaKey)){event.preventDefault();translateFromInput();}"></textarea>
+
+      <!-- Çevir butonu -->
+      <button onclick="translateFromInput()"
+        style="width:100%;margin-top:10px;padding:12px;background:linear-gradient(135deg,#3b82f6,#1d4ed8);color:white;border:none;border-radius:12px;font-size:15px;font-weight:700;cursor:pointer;touch-action:manipulation;">
+        🔄 Çevir
       </button>
-      <button id="tr-btn-en" onclick="startListening('en-US')"
-        style="background:linear-gradient(135deg,#1d4ed8,#1e40af);color:white;border:none;border-radius:18px;padding:20px 8px;cursor:pointer;transition:all 0.2s ease;box-shadow:0 6px 18px rgba(29,78,216,0.3);-webkit-tap-highlight-color:transparent;touch-action:manipulation;">
-        <div style="font-size:32px;margin-bottom:8px;">🇬🇧</div>
-        <div style="font-size:14px;font-weight:700;margin-bottom:4px;">Speak English</div>
-        <div style="font-size:11px;opacity:0.85;">→ Türkçeye çevir</div>
-        <div style="margin-top:8px;font-size:20px;">🎤</div>
-      </button>
+
+      <div style="font-size:10px;color:var(--muted);margin-top:6px;text-align:center;">
+        ${speechWorks ? 'Ctrl+Enter ile hızlı çevir' : 'Metni yazıp Çevir butonuna basın'}
+      </div>
     </div>
 
     <!-- Onay Kutusu buraya dinamik eklenir -->
@@ -621,18 +716,62 @@ function renderTranslatorUI() {
         <div id="tr-empty"
           style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:36px 20px;text-align:center;color:var(--muted);">
           <div style="font-size:44px;margin-bottom:14px;opacity:0.4;">💬</div>
-          <div style="font-size:14px;font-weight:600;margin-bottom:6px;">Henüz konuşma yok</div>
-          <div style="font-size:12px;opacity:0.8;">Yukarıdaki butonlardan birine basarak başlayın</div>
+          <div style="font-size:14px;font-weight:600;margin-bottom:6px;">Henüz çeviri yok</div>
+          <div style="font-size:12px;opacity:0.8;">
+            ${speechWorks ? 'Konuşun veya yazın' : 'Aşağıdan yazın'} ve çeviri başlasın
+          </div>
         </div>
       </div>
     </div>
 
     <!-- Alt Bilgi -->
     <div style="margin-top:14px;text-align:center;color:var(--muted);font-size:11px;line-height:1.8;">
-      <div>⚡ Web Speech API + MyMemory Translate</div>
-      <div>Chrome / Edge / Safari • İnternet bağlantısı gereklidir</div>
+      <div>⚡ ${speechWorks ? 'Web Speech API +' : ''} MyMemory Translate</div>
+      <div>${speechWorks ? 'Chrome / Edge / Safari' : 'Tüm tarayıcılar'} • İnternet bağlantısı gereklidir</div>
     </div>
   `;
+}
+
+// ============================================================
+// KLAVYE GİRİŞİ: Dil modu seçimi + Çeviri
+// ============================================================
+let trInputMode = 'tr'; // 'tr' = TR→EN, 'en' = EN→TR
+
+function trSetInputMode(mode) {
+  trInputMode = mode;
+  const btnTr = document.getElementById('tr-mode-tr');
+  const btnEn = document.getElementById('tr-mode-en');
+  const inp   = document.getElementById('tr-text-input');
+
+  if (!btnTr || !btnEn) return;
+
+  if (mode === 'tr') {
+    btnTr.style.cssText = 'flex:1;padding:9px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;border:2px solid #dc2626;background:#fee2e2;color:#b91c1c;touch-action:manipulation;';
+    btnEn.style.cssText = 'flex:1;padding:9px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;border:2px solid #e2e8f0;background:var(--input-bg);color:var(--muted);touch-action:manipulation;';
+    if (inp) inp.placeholder = 'Türkçe yazın…';
+  } else {
+    btnEn.style.cssText = 'flex:1;padding:9px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;border:2px solid #1d4ed8;background:#dbeafe;color:#1e40af;touch-action:manipulation;';
+    btnTr.style.cssText = 'flex:1;padding:9px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;border:2px solid #e2e8f0;background:var(--input-bg);color:var(--muted);touch-action:manipulation;';
+    if (inp) inp.placeholder = 'Type in English…';
+  }
+
+  if (inp) inp.focus();
+}
+
+async function translateFromInput() {
+  const inp = document.getElementById('tr-text-input');
+  if (!inp) return;
+  const text = inp.value.trim();
+  if (!text) return;
+
+  const sourceLang = trInputMode === 'tr' ? 'tr-TR' : 'en-US';
+  const targetLang = trInputMode === 'tr' ? 'en-US' : 'tr-TR';
+
+  // Input'u temizle
+  inp.value = '';
+
+  // handleSpeechResult'ı kullan (onay kutusu olmadan direkt çeviri)
+  await handleSpeechResult(text, sourceLang);
 }
 
 // ============================================================
