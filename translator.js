@@ -198,7 +198,7 @@ function _doSpeak(text, lang) {
   window.speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
   u.lang   = lang;
-  u.rate   = 1.05;  // Biraz hızlı = daha net ve doğal
+  u.rate   = lang === 'en-US' ? 0.85 : 1.05;  // EN yavaş, TR normal
   u.pitch  = 1.0;   // Nötr ton
   u.volume = 1;
 
