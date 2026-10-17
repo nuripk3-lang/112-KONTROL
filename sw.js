@@ -1,4 +1,4 @@
-const CACHE_NAME = '112-asistan-v43-full-offline';
+const CACHE_NAME = '112-asistan-v44-full-offline';
 const urlsToCache = [
   './',
   './index.html',
@@ -67,7 +67,7 @@ self.addEventListener('install', event => {
   self.skipWaiting(); // Yeni SW'yi hemen aktif et
 });
 
-// Eski cache'leri temizle
+// Eski cache'leri temizle + tüm clientları kontrol altına al
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(cacheNames => {
@@ -78,44 +78,86 @@ self.addEventListener('activate', event => {
           }
         })
       );
-    })
+    }).then(() => self.clients.claim())
   );
-  return self.clients.claim(); // Tüm clientları kontrol altına al
+  // Tüm açık sayfalara güncelleme bildirimi gönder
+  self.clients.matchAll({ type: 'window' }).then(clients => {
+    clients.forEach(client => client.postMessage({ type: 'SW_UPDATED' }));
+  });
 });
 
-// Gelişmiş cache stratejisi: Cache-first with network fallback (TAM OFFLINE)
+// ============================================================
+// Akıllı Cache Stratejisi:
+// HTML/JS/CSS → NETWORK-FIRST (her zaman güncel kod)
+// Resim/Video/Ses → CACHE-FIRST (offline için)
+// ============================================================
 self.addEventListener('fetch', event => {
-  // GET istekleri için cache stratejisi uygula
-  if (event.request.method === 'GET') {
+  if (event.request.method !== 'GET') return;
+
+  const url = new URL(event.request.url);
+  const isSameOrigin = url.origin === self.location.origin;
+
+  // Sadece aynı origin'deki dosyalar için cache stratejisi uygula
+  if (!isSameOrigin) return;
+
+  // HTML, JS, CSS dosyaları → NETWORK-FIRST
+  const isCodeFile = url.pathname.endsWith('.html') ||
+                     url.pathname.endsWith('.js') ||
+                     url.pathname.endsWith('.css') ||
+                     url.pathname === '/' ||
+                     url.pathname.endsWith('/');
+
+  if (isCodeFile) {
     event.respondWith(
-      caches.match(event.request).then(cachedResponse => {
-        // Cache'de varsa hemen döndür (OFFLINE ÇALIŞIR)
-        if (cachedResponse) {
-          return cachedResponse;
-        }
-        
-        // Cache'de yoksa network'ten getir ve cache'e kaydet
-        return fetch(event.request).then(response => {
-          // Sadece başarılı yanıtları cache'le
-          if (!response || response.status !== 200 || response.type === 'error') {
-            return response;
+      fetch(event.request)
+        .then(networkResponse => {
+          // Network başarılı → cache'e kaydet ve dön
+          if (networkResponse && networkResponse.status === 200) {
+            const clone = networkResponse.clone();
+            caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
           }
-          
-          const responseClone = response.clone();
-          caches.open(CACHE_NAME).then(cache => {
-            cache.put(event.request, responseClone);
+          return networkResponse;
+        })
+        .catch(() => {
+          // Network yok → cache'ten dönmeyi dene
+          return caches.match(event.request).then(cached => {
+            return cached || new Response('Offline', {
+              status: 503,
+              headers: new Headers({ 'Content-Type': 'text/html; charset=utf-8' })
+            });
           });
-          
-          return response;
-        }).catch(() => {
-          // Network hatası - offline sayfası döndür
-          return new Response('Offline - İnternet bağlantınızı kontrol edin', {
-            status: 503,
-            statusText: 'Service Unavailable',
-            headers: new Headers({ 'Content-Type': 'text/plain; charset=utf-8' })
-          });
-        });
-      })
+        })
     );
+    return;
   }
+
+  // Diğer dosyalar (resim, video, ses) → CACHE-FIRST + arka planda güncelle
+  event.respondWith(
+    caches.match(event.request).then(cachedResponse => {
+      // Cache'te varsa hemen döndür
+      if (cachedResponse) {
+        // Arka planda network'ten güncelle (stale-while-revalidate)
+        fetch(event.request).then(networkResponse => {
+          if (networkResponse && networkResponse.status === 200) {
+            const clone = networkResponse.clone();
+            caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+          }
+        }).catch(() => {});
+        return cachedResponse;
+      }
+
+      // Cache'te yoksa network'ten getir
+      return fetch(event.request).then(response => {
+        if (!response || response.status !== 200) return response;
+        const clone = response.clone();
+        caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
+        return response;
+      }).catch(() => {
+        return new Response('Offline', {
+          status: 503,
+          statusText: 'Service Unavailable'
+        });
+      });
+    })
+  );
 });
