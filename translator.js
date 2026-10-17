@@ -197,11 +197,30 @@ function _doSpeak(text, lang) {
   if (!('speechSynthesis' in window)) return;
   window.speechSynthesis.cancel();
   const u = new SpeechSynthesisUtterance(text);
-  u.lang = lang; u.rate = 0.9; u.pitch = 1; u.volume = 1;
+  u.lang   = lang;
+  u.rate   = 1.05;  // Biraz hızlı = daha net ve doğal
+  u.pitch  = 1.0;   // Nötr ton
+  u.volume = 1;
+
+  // Cihazda uygun ses varsa seç
+  const voices = window.speechSynthesis.getVoices();
+  if (voices.length > 0) {
+    const langCode = lang.split('-')[0];
+    const bestVoice = voices.find(v => v.lang.startsWith(langCode) && v.localService)
+                   || voices.find(v => v.lang.startsWith(langCode));
+    if (bestVoice) u.voice = bestVoice;
+  }
+
   translatorState.isSpeaking = true;
   u.onend = u.onerror = () => { translatorState.isSpeaking = false; };
   isAndroid() ? setTimeout(() => window.speechSynthesis.speak(u), 150)
               : window.speechSynthesis.speak(u);
+}
+
+// Voices listesi async yüklenebilir — önceden yükle
+if ('speechSynthesis' in window) {
+  window.speechSynthesis.getVoices();
+  window.speechSynthesis.onvoiceschanged = () => window.speechSynthesis.getVoices();
 }
 
 function trShowSpeakButton(msgId, text, lang) {
